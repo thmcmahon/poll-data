@@ -9,6 +9,7 @@ require(ggplot2)
 
 clean.data <- function(data) {
   # clean up data names and remove unused columns from Toby's poll spreadsheet
+  # leave in wide format
   names(data) <- tolower(names(data))
   data <- select(data, 
                  poll.end.date,
@@ -39,76 +40,43 @@ clean.data <- function(data) {
 }
 
 create.long <- function(data.clean) {
-  # Make a long version of the table
+  # Make a long version of the cleaned up poll table for easier analysis
   data.long <- melt(data.clean, id.vars=c("poll.end.date", "poll.source", 
                                           "prime.minister", "opposition.leader"), na.rm=TRUE)
   data.long <- arrange(data.long, desc(poll.end.date), poll.source)
+  
+  # Tidy up variable names
+  data.long$variable <- as.character(data.long$variable) # Can't perform the character operations on factors
+  data.long$variable[data.long$variable=='alp'] <- "ALP"
+  data.long$variable[data.long$variable=='coalition'] <- "Coalition"
+  data.long$variable[data.long$variable=='liberal'] <- "Liberal"
+  data.long$variable[data.long$variable=='national'] <- "National"
+  data.long$variable[data.long$variable=='greens'] <- "Greens"
+  data.long$variable[data.long$variable=='palmer.united'] <- "Palmer United"
+  data.long$variable[data.long$variable=='others'] <- "Others"
+  data.long$variable[data.long$variable=='coalition.2pp'] <- "Coalition (2pp)"
+  data.long$variable[data.long$variable=='labor.2pp'] <- "Labor (2pp)"
+  data.long$variable[data.long$variable=='satisfied.pm'] <- "Satisfied (PM)"
+  data.long$variable[data.long$variable=='dissatisfied.pm'] <- "Dissatisfied (PM)"
+  data.long$variable[data.long$variable=='satisfied.loto'] <- "Satisfied (LOTO)"
+  data.long$variable[data.long$variable=='dissatisfied.loto'] <- "Dissatisfied (LOTO)"
+  data.long$variable[data.long$variable=='prime.minister.ppm'] <- "Preferred Prime Minister (PM)"
+  data.long$variable[data.long$variable=='opposition.leader.ppm'] <- "Preferred Prime Minister (LOTO)"
+  data.long$variable <- as.factor(data.long$variable) # Convert back to factor
+
   return(data.long)
-}
-
-create.parties <- function(data) {
-  # Create a table of primary votes and 2pps from cleaned poll data
-  data.subset <- select(data, poll.end.date, poll.source, liberal, national, coalition,
-                        alp, greens, palmer.united, family.first, democrats, pauline.hanson.one.nation,
-                        others, coalition.2pp, labor.2pp)
-  data.subset.long <- melt(data.subset, id.vars= c("poll.end.date", "poll.source"), na.rm = TRUE)
-  return(data.subset.long)
-}
-
-create.2pp <- function(data, start_date) {
-  # Create a subsetted table with only two party preferred results
-  data.2pp <- select(data, Party=variable, Percent=value, poll.end.date)
-  data.2pp$Party <- as.character(data.2pp$Party)
-  data.2pp <- filter(data.2pp, Party=="coalition.2pp" | Party=="labor.2pp", poll.end.date>=start_date)
-  # Make pretty variable names
-  data.2pp$Party[data.2pp$Party=='labor.2pp'] <- "Labor"
-  data.2pp$Party[data.2pp$Party=='coalition.2pp'] <- "Coalition"
-  data.2pp <- mutate(data.2pp, type="Two-party preferred")
-  return(data.2pp)
-}
-
-create.preferred.pm <- function(data) {
-  data <- select(data, 
-                 poll.end.date,
-                 poll.source,
-                 satisfied.pm,
-                 dissatisfied.pm,
-                 satisfied.loto,
-                 dissatisfied.loto,
-                 prime.minister.ppm,
-                 opposition.leader.ppm,
-                 prime.minister,
-                 opposition.leader)
-  data <- melt(data, id.vars = c("poll.end.date", "poll.source", "prime.minister", "opposition.leader"), na.rm = TRUE)
-  data <- mutate(data, type="PM satisfaction")
-  return(data)
-}
-
-create.primaries <- function(data) {
-  data <- select(data, 
-                 poll.end.date,
-                 poll.source,
-                 liberal,
-                 national,
-                 coalition,
-                 alp,
-                 greens,
-                 palmer.united,
-                 family.first,
-                 democrats,
-                 pauline.hanson.one.nation,
-                 others
-    )
-  data <- melt(data, id.vars = c("poll.end.date", "poll.source"), na.rm = TRUE)  
-  data <- mutate(data, type="Primary voting intention")
 }
 
 create.2pp.graph <- function(data) {
   # Create a ggplot2 graph of the
-  graph <- ggplot(data, aes(y=Percent, x=poll.end.date, colour=Party))
+  graph <- ggplot(data, aes(y=value, x=poll.end.date, colour=variable))
   graph + geom_point(alpha=.4) + 
     stat_smooth() + 
-    scale_colour_manual(values=c("#0971B2", "#FF0000")) + 
+    # This manually sets the legend values, see:
+    # http://www.cookbook-r.com/Graphs/Legends_(ggplot2)/#modifying-the-text-of-legend-titles-and-labels
+    scale_colour_manual(values=c("#0971B2", "#FF0000"),
+                        name="Parties",
+                        labels=c("Coalition", "Labor")) + 
     labs(list(title="Two-party Preferred Polling, 1996-2014", y="Per cent", x="Year")) +
     theme_bw()
 }
@@ -119,8 +87,8 @@ create.2pp.graph <- function(data) {
 
 data.raw <- read.csv(file="Opinion_Poll_Master.csv")
 data.clean <- clean.data(data.raw)
-parties <- create.parties(data.clean)
-two.pp <- create.2pp(parties, '1996-01-01')
-preferred.pm <- create.preferred.pm(data.clean)
-primaries <- create.primaries(data.clean)
+data.long <- create.long(data.clean)
+
+# Create a table of only two party preferred results after 1996, then graph them
+two.pp <- filter(data.long, variable=='Labor (2pp)' | variable=='Coalition (2pp)', poll.end.date >= '1996-01-01')
 create.2pp.graph(two.pp)
